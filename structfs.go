@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"reflect"
@@ -92,7 +91,7 @@ func (f *file) Read(b []byte) (int, error) {
 	var buffer []byte
 
 	if f.offset > int64(len(f.data)) {
-		log.Printf("eof\n")
+		//		log.Printf("eof\n")
 		return 0, io.EOF
 	}
 

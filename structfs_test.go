@@ -2,9 +2,7 @@ package structfs
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strings"
 	"testing"
@@ -107,7 +105,7 @@ func server() {
 	http.Handle("/metadata/v1/", http.StripPrefix("/metadata/v1/", FileServer(&stfs, "json", time.Now())))
 	http.Handle("/", &stfs)
 	go func() {
-		log.Fatal(http.ListenAndServe(":8080", nil))
+		panic(http.ListenAndServe(":8080", nil))
 	}()
 	time.Sleep(2 * time.Second)
 }
@@ -117,7 +115,7 @@ func (stfs *DigitalOceanMeta) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	idx := strings.Index(r.URL.Path[1:], "/")
 	r.URL.Path = r.URL.Path[idx+1:]
 	r.RequestURI = r.URL.Path
-	fmt.Printf("%#+v\n", r.URL)
+	//	fmt.Printf("%#+v\n", r.URL)
 	fs.ServeHTTP(w, r)
 }
 
