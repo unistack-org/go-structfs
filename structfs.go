@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// NewFileServer creates new file server from the struct iface with specific tag and specific time
-func NewFileServer(iface interface{}, tag string, modtime time.Time) http.Handler {
+// FileServer creates new file server from the struct iface with specific tag and specific modtime
+func FileServer(iface interface{}, tag string, modtime time.Time) http.Handler {
 	if modtime.IsZero() {
 		modtime = time.Now()
 	}

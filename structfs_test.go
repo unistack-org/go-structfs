@@ -104,7 +104,7 @@ var js = []byte(`{
 func server() {
 	stfs := DigitalOceanMeta{}
 	json.Unmarshal(js, &stfs)
-	http.Handle("/metadata/v1/", http.StripPrefix("/metadata/v1/", NewFileServer(&stfs, "json", time.Now())))
+	http.Handle("/metadata/v1/", http.StripPrefix("/metadata/v1/", FileServer(&stfs, "json", time.Now())))
 	http.Handle("/", &stfs)
 	go func() {
 		log.Fatal(http.ListenAndServe(":8080", nil))
@@ -113,7 +113,7 @@ func server() {
 }
 
 func (stfs *DigitalOceanMeta) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fs := NewFileServer(stfs, "json", time.Now())
+	fs := FileServer(stfs, "json", time.Now())
 	idx := strings.Index(r.URL.Path[1:], "/")
 	r.URL.Path = r.URL.Path[idx+1:]
 	r.RequestURI = r.URL.Path
