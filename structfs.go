@@ -13,70 +13,82 @@ import (
 	"time"
 )
 
-func NewFileServer(iface interface{}, tag string) http.Handler {
-	return &Fs{iface: iface, tag: tag}
+// NewFileServer creates new file server from the struct iface with specific tag and specific time
+func NewFileServer(iface interface{}, tag string, modtime time.Time) http.Handler {
+	if modtime.IsZero() {
+		modtime = time.Now()
+	}
+	return &fs{iface: iface, tag: tag, modtime: modtime}
 }
 
-func (fs *Fs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (fs *fs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	upath := r.URL.Path
 	if !strings.HasPrefix(upath, "/") {
 		upath = "/" + upath
 		r.URL.Path = upath
 	}
-	f, _ := fs.Open(r.URL.Path)
+	f, err := fs.Open(r.URL.Path)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeContent(w, r, r.URL.Path, time.Now(), f)
+	http.ServeContent(w, r, r.URL.Path, fs.modtime, f)
 }
 
-type Fs struct {
-	iface interface{}
-	tag   string
+type fs struct {
+	iface   interface{}
+	tag     string
+	modtime time.Time
 }
 
-type File struct {
-	name   string
-	offset int64
-	data   []byte
+type file struct {
+	name    string
+	offset  int64
+	data    []byte
+	modtime time.Time
 }
 
-type FileInfo struct {
-	name string
-	size int64
+type fileInfo struct {
+	name    string
+	size    int64
+	modtime time.Time
 }
 
-func (fi *FileInfo) Sys() interface{} {
+func (fi *fileInfo) Sys() interface{} {
 	return nil
 }
 
-func (fi *FileInfo) Size() int64 {
+func (fi *fileInfo) Size() int64 {
 	return fi.size
 }
 
-func (fi *FileInfo) Name() string {
+func (fi *fileInfo) Name() string {
 	return fi.name
 }
 
-func (fi *FileInfo) Mode() os.FileMode {
+func (fi *fileInfo) Mode() os.FileMode {
 	if strings.HasSuffix(fi.name, "/") {
 		return os.FileMode(0755) | os.ModeDir
 	}
 	return os.FileMode(0644)
 }
 
-func (fi *FileInfo) IsDir() bool {
+func (fi *fileInfo) IsDir() bool {
 	// disables additional open /index.html
 	return false
 }
 
-func (fi *FileInfo) ModTime() time.Time {
-	return time.Now()
+func (fi *fileInfo) ModTime() time.Time {
+	return fi.modtime
 }
 
-func (f *File) Close() error {
+func (f *file) Close() error {
 	return nil
 }
 
-func (f *File) Read(b []byte) (int, error) {
+func (f *file) Read(b []byte) (int, error) {
 	var buffer []byte
 
 	if f.offset > int64(len(f.data)) {
@@ -100,11 +112,11 @@ read:
 	return n, err
 }
 
-func (f *File) Readdir(count int) ([]os.FileInfo, error) {
+func (f *file) Readdir(count int) ([]os.FileInfo, error) {
 	return nil, nil
 }
 
-func (f *File) Seek(offset int64, whence int) (int64, error) {
+func (f *file) Seek(offset int64, whence int) (int64, error) {
 	//	log.Printf("seek %d %d %s\n", offset, whence, f.name)
 	switch whence {
 	case os.SEEK_SET:
@@ -118,20 +130,18 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 
 }
 
-func (f *File) Stat() (os.FileInfo, error) {
-	return &FileInfo{name: f.name, size: int64(len(f.data))}, nil
+func (f *file) Stat() (os.FileInfo, error) {
+	return &fileInfo{name: f.name, size: int64(len(f.data)), modtime: f.modtime}, nil
 }
 
-func (fs *Fs) Open(path string) (http.File, error) {
-	return newFile(path, fs.iface, fs.tag)
+func (fs *fs) Open(path string) (http.File, error) {
+	return newFile(path, fs.iface, fs.tag, fs.modtime)
 }
 
-func newFile(name string, iface interface{}, tag string) (*File, error) {
-	//	fmt.Printf("newFile %s\n", name)
+func newFile(name string, iface interface{}, tag string, modtime time.Time) (*file, error) {
 	var err error
-	var f *File
 
-	f = &File{name: name}
+	f := &file{name: name, modtime: modtime}
 	f.data, err = structItem(name, iface, tag)
 	if err != nil {
 		return nil, err
@@ -144,11 +154,6 @@ func structItem(path string, iface interface{}, tag string) ([]byte, error) {
 	var err error
 	var curiface interface{}
 
-	//	fmt.Printf("structItem %s\n", path)
-	/*        if strings.HasSuffix(path, "/") && !hasValidType(iface, []reflect.Kind{reflect.Struct, reflect.Ptr}) {
-	                  return nil, errors.New("Cannot get use GetField on a non-struct interface")
-	          }
-	*/
 	if path == "/" {
 		return getNames(iface, tag)
 	}
@@ -160,19 +165,17 @@ func structItem(path string, iface interface{}, tag string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		//		fmt.Printf("ZZZ %s %s\n", path, path[idx+1:])
 		buf, err = structItem(path[idx+1:], curiface, tag)
 	case idx == 0:
 		return getNames(iface, tag)
 	case idx < 0:
-		return getValue(path, iface, tag)
+		return getValue(path[1:], iface, tag)
 	}
 
 	return buf, err
 }
 
 func getNames(iface interface{}, tag string) ([]byte, error) {
-	//	fmt.Printf("getNames %#+v\n", iface)
 	var lines []string
 	s := reflectValue(iface)
 	typeOf := s.Type()
@@ -189,12 +192,10 @@ func getNames(iface interface{}, tag string) ([]byte, error) {
 }
 
 func getStruct(name string, iface interface{}, tag string) (interface{}, error) {
-	//	fmt.Printf("getStruct %s\n", name)
 	s := reflectValue(iface)
 	typeOf := s.Type()
 	for i := 0; i < s.NumField(); i++ {
 		if typeOf.Field(i).Tag.Get(tag) == name {
-			//			fmt.Printf("%#+v\n", s.Field(i).Interface())
 			return s.Field(i).Interface(), nil
 		}
 	}
@@ -202,10 +203,12 @@ func getStruct(name string, iface interface{}, tag string) (interface{}, error) 
 }
 
 func getValue(name string, iface interface{}, tag string) ([]byte, error) {
-	//	fmt.Printf("getValue %s\n", name)
 	s := reflectValue(iface)
-	//	typeOf := s.Type()
+	typeOf := s.Type()
 	for i := 0; i < s.NumField(); i++ {
+		if typeOf.Field(i).Tag.Get(tag) != name {
+			continue
+		}
 		ifs := s.Field(i).Interface()
 		switch s.Field(i).Kind() {
 		case reflect.Slice:

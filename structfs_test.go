@@ -2,9 +2,11 @@ package structfs
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -102,11 +104,21 @@ var js = []byte(`{
 func server() {
 	stfs := DigitalOceanMeta{}
 	json.Unmarshal(js, &stfs)
-	http.Handle("/metadata/v1/", http.StripPrefix("/metadata/v1/", NewFileServer(&stfs, "json")))
+	http.Handle("/metadata/v1/", http.StripPrefix("/metadata/v1/", NewFileServer(&stfs, "json", time.Now())))
+	http.Handle("/", &stfs)
 	go func() {
 		log.Fatal(http.ListenAndServe(":8080", nil))
 	}()
 	time.Sleep(2 * time.Second)
+}
+
+func (stfs *DigitalOceanMeta) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fs := NewFileServer(stfs, "json", time.Now())
+	idx := strings.Index(r.URL.Path[1:], "/")
+	r.URL.Path = r.URL.Path[idx+1:]
+	r.RequestURI = r.URL.Path
+	fmt.Printf("%#+v\n", r.URL)
+	fs.ServeHTTP(w, r)
 }
 
 func get(path string) ([]byte, error) {
@@ -125,16 +137,17 @@ var tests = []struct {
 	{"http://127.0.0.1:8080/metadata/v1/", "droplet_id\nhostname\nvendor_data\npublic_keys\nregion\ninterfaces\nfloating_ip\ndns"},
 	{"http://127.0.0.1:8080/metadata/v1/droplet_id", "2756294"},
 	{"http://127.0.0.1:8080/metadata/v1/dns/", "nameservers"},
-	{"http://127.0.0.1:8080/metadata/v1/dns/ameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
+	{"http://127.0.0.1:8080/metadata/v1/dns/nameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
+	//	{"http://127.0.0.1:8080/127.0.0.1/metadata/v1/dns/nameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
 }
 
 func TestAll(t *testing.T) {
 	server()
 
 	for _, tt := range tests {
-		buf, err := get(tt.in)
-		if string(buf) != tt.out || err != nil {
-			t.Errorf("get %s want %s", tt.in, tt.out)
+		buf, _ := get(tt.in)
+		if string(buf) != tt.out {
+			t.Errorf("%s get %s want %s", tt.in, string(buf), tt.out)
 		}
 	}
 
