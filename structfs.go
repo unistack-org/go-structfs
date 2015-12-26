@@ -1,8 +1,6 @@
 package structfs
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,25 +86,21 @@ func (f *file) Close() error {
 }
 
 func (f *file) Read(b []byte) (int, error) {
-	var buffer []byte
+	var err error
+	var n int
 
-	if f.offset > int64(len(f.data)) {
-		//		log.Printf("eof\n")
+	if f.offset >= int64(len(f.data)) {
 		return 0, io.EOF
 	}
 
 	if len(f.data) > 0 {
-		buffer = make([]byte, len(f.data[f.offset:]))
-		copy(buffer, f.data[f.offset:])
-		goto read
+		n = copy(b, f.data[f.offset:])
 	}
 
-	f.data = make([]byte, len(buffer))
-	copy(f.data, buffer)
+	if n < len(b) {
+		err = io.EOF
+	}
 
-read:
-	r := bytes.NewReader(buffer)
-	n, err := r.Read(b)
 	f.offset += int64(n)
 	return n, err
 }
@@ -187,7 +181,7 @@ func getNames(iface interface{}, tag string) ([]byte, error) {
 	if len(lines) > 0 {
 		return []byte(strings.Join(lines, "\n")), nil
 	}
-	return nil, errors.New("failed to find names")
+	return nil, fmt.Errorf("failed to find names")
 }
 
 func getStruct(name string, iface interface{}, tag string) (interface{}, error) {
@@ -198,7 +192,7 @@ func getStruct(name string, iface interface{}, tag string) (interface{}, error) 
 			return s.Field(i).Interface(), nil
 		}
 	}
-	return nil, errors.New("failed to find iface")
+	return nil, fmt.Errorf("failed to find iface")
 }
 
 func getValue(name string, iface interface{}, tag string) ([]byte, error) {
@@ -220,7 +214,7 @@ func getValue(name string, iface interface{}, tag string) ([]byte, error) {
 			return []byte(fmt.Sprintf("%v", ifs)), nil
 		}
 	}
-	return nil, errors.New("cant find name in interface")
+	return nil, fmt.Errorf("cant find %s in interface", name)
 }
 
 func hasValidType(obj interface{}, types []reflect.Kind) bool {
