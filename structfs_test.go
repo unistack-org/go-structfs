@@ -113,9 +113,8 @@ func server() {
 func (stfs *DigitalOceanMeta) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fs := FileServer(stfs, "json", time.Now())
 	idx := strings.Index(r.URL.Path[1:], "/")
-	r.URL.Path = r.URL.Path[idx+1:]
+	r.URL.Path = strings.Replace(r.URL.Path[idx+1:], "/metadata/v1/", "", 1)
 	r.RequestURI = r.URL.Path
-	//	fmt.Printf("%#+v\n", r.URL)
 	fs.ServeHTTP(w, r)
 }
 
@@ -136,7 +135,7 @@ var tests = []struct {
 	{"http://127.0.0.1:8080/metadata/v1/droplet_id", "2756294"},
 	{"http://127.0.0.1:8080/metadata/v1/dns/", "nameservers"},
 	{"http://127.0.0.1:8080/metadata/v1/dns/nameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
-	//	{"http://127.0.0.1:8080/127.0.0.1/metadata/v1/dns/nameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
+	{"http://127.0.0.1:8080/127.0.0.1/metadata/v1/dns/nameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
 }
 
 func TestAll(t *testing.T) {
