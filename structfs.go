@@ -192,29 +192,34 @@ func getStruct(name string, iface interface{}, tag string) (interface{}, error) 
 			return s.Field(i).Interface(), nil
 		}
 	}
-	return nil, fmt.Errorf("failed to find iface")
+	return nil, fmt.Errorf("failed to find iface %T with name %s", iface, name)
 }
 
 func getValue(name string, iface interface{}, tag string) ([]byte, error) {
 	s := reflectValue(iface)
 	typeOf := s.Type()
-	for i := 0; i < s.NumField(); i++ {
-		if typeOf.Field(i).Tag.Get(tag) != name {
-			continue
-		}
-		ifs := s.Field(i).Interface()
-		switch s.Field(i).Kind() {
-		case reflect.Slice:
-			var lines []string
-			for k := 0; k < s.Field(i).Len(); k++ {
-				lines = append(lines, fmt.Sprintf("%v", s.Field(i).Index(k)))
+	switch typeOf.Kind() {
+	case reflect.Map:
+		return []byte(fmt.Sprintf("%v", s.MapIndex(reflect.ValueOf(name)).Interface())), nil
+	default:
+		for i := 0; i < s.NumField(); i++ {
+			if typeOf.Field(i).Tag.Get(tag) != name {
+				continue
 			}
-			return []byte(strings.Join(lines, "\n")), nil
-		default:
-			return []byte(fmt.Sprintf("%v", ifs)), nil
+			ifs := s.Field(i).Interface()
+			switch s.Field(i).Kind() {
+			case reflect.Slice:
+				var lines []string
+				for k := 0; k < s.Field(i).Len(); k++ {
+					lines = append(lines, fmt.Sprintf("%v", s.Field(i).Index(k)))
+				}
+				return []byte(strings.Join(lines, "\n")), nil
+			default:
+				return []byte(fmt.Sprintf("%v", ifs)), nil
+			}
 		}
 	}
-	return nil, fmt.Errorf("cant find %s in interface", name)
+	return nil, fmt.Errorf("failed to find %s in interface %T", name, iface)
 }
 
 func hasValidType(obj interface{}, types []reflect.Kind) bool {

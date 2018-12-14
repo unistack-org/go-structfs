@@ -4,51 +4,9 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 )
-
-type DigitalOceanMeta struct {
-	DropletID  int64    `json:"droplet_id"`
-	Hostname   string   `json:"hostname"`
-	VendorData string   `json:"vendor_data"`
-	PublicKeys []string `json:"public_keys"`
-	Region     string   `json:"region"`
-	Interfaces struct {
-		Private []struct {
-			IPv4 struct {
-				Address string `json:"ip_address"`
-				Netmask string `json:"netmask"`
-				Gateway string `json:"gateway"`
-			}
-			Mac  string `json:"mac"`
-			Type string `json:"type"`
-		} `json:"private"`
-		Public []struct {
-			IPv4 struct {
-				Address string `json:"ip_address"`
-				Netmask string `json:"netmask"`
-				Gateway string `json:"gateway"`
-			} `json:"ipv4"`
-			IPv6 struct {
-				Address string `json:"ip_address"`
-				CIDR    int    `json:"cidr"`
-				Gateway string `json:"gateway"`
-			} `json:"ipv6"`
-			Mac  string `json:"mac"`
-			Type string `json:"type"`
-		} `json:"public"`
-	} `json:"interfaces"`
-	FloatingIP struct {
-		IPv4 struct {
-			Active bool `json:"active"`
-		} `json:"ipv4"`
-	} `json:"floating_ip"`
-	DNS struct {
-		Nameservers []string `json:"nameservers"`
-	} `json:"dns"`
-}
 
 var js = []byte(`{
   "droplet_id":2756294,
@@ -95,27 +53,26 @@ var js = []byte(`{
       "2001:4860:4860::8888",
       "8.8.8.8"
     ]
+  },
+  "features":{
+    "dhcp_enabled": true
   }
 }
 `)
 
 func server() {
-	stfs := DigitalOceanMeta{}
-	json.Unmarshal(js, &stfs)
-	http.Handle("/metadata/v1/", http.StripPrefix("/metadata/v1/", FileServer(&stfs, "json", time.Now())))
+	stfs := DigitalOceanMetadata{}
+	err := json.Unmarshal(js, &stfs.Metadata.V1)
+	if err != nil {
+		panic(err)
+	}
+
+	http.Handle("/metadata/v1/", FileServer(&stfs, "json", time.Now()))
 	http.Handle("/", &stfs)
 	go func() {
-		panic(http.ListenAndServe(":8080", nil))
+		panic(http.ListenAndServe("127.0.0.1:8080", nil))
 	}()
 	time.Sleep(2 * time.Second)
-}
-
-func (stfs *DigitalOceanMeta) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fs := FileServer(stfs, "json", time.Now())
-	idx := strings.Index(r.URL.Path[1:], "/")
-	r.URL.Path = strings.Replace(r.URL.Path[idx+1:], "/metadata/v1/", "", 1)
-	r.RequestURI = r.URL.Path
-	fs.ServeHTTP(w, r)
 }
 
 func get(path string) ([]byte, error) {
@@ -131,11 +88,11 @@ var tests = []struct {
 	in  string
 	out string
 }{
-	{"http://127.0.0.1:8080/metadata/v1/", "droplet_id\nhostname\nvendor_data\npublic_keys\nregion\ninterfaces\nfloating_ip\ndns"},
+	{"http://127.0.0.1:8080/metadata/v1/", "droplet_id\nhostname\nvendor_data\npublic_keys\nregion\ninterfaces\nfloating_ip\ndns\nfeatures"},
 	{"http://127.0.0.1:8080/metadata/v1/droplet_id", "2756294"},
 	{"http://127.0.0.1:8080/metadata/v1/dns/", "nameservers"},
 	{"http://127.0.0.1:8080/metadata/v1/dns/nameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
-	{"http://127.0.0.1:8080/127.0.0.1/metadata/v1/dns/nameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
+	{"http://127.0.0.1:8080/metadata/v1/features/dhcp_enabled", "true"},
 }
 
 func TestAll(t *testing.T) {

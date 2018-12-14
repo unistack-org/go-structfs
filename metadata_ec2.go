@@ -1,4 +1,4 @@
-package metadata
+package structfs
 
 type EC2Metadata struct {
 	Latest struct {
