@@ -1,6 +1,7 @@
 package structfs
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -53,9 +54,14 @@ type DigitalOceanMetadata struct {
 }
 
 func (stfs *DigitalOceanMetadata) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fs := FileServer(stfs, "json", time.Now())
-	idx := strings.Index(r.URL.Path[1:], "/")
-	r.URL.Path = strings.Replace(r.URL.Path[idx+1:], "/metadata/v1/", "", 1)
-	r.RequestURI = r.URL.Path
-	fs.ServeHTTP(w, r)
+	switch r.URL.Path {
+	case "/metadata/v1.json":
+		json.NewEncoder(w).Encode(stfs.Metadata.V1)
+	default:
+		fs := FileServer(stfs, "json", time.Now())
+		idx := strings.Index(r.URL.Path[1:], "/")
+		r.URL.Path = strings.Replace(r.URL.Path[idx+1:], "/metadata/v1/", "", 1)
+		r.RequestURI = r.URL.Path
+		fs.ServeHTTP(w, r)
+	}
 }

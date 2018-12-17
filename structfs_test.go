@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 )
 
-var js = []byte(`{
+var doOrig = []byte(`{
   "droplet_id":2756294,
   "hostname":"sample-droplet",
   "vendor_data":"#cloud-config\ndisable_root: false\nmanage_etc_hosts: true\n\ncloud_config_modules:\n - ssh\n - set_hostname\n - [ update_etc_hosts, once-per-instance ]\n\ncloud_final_modules:\n - scripts-vendor\n - scripts-per-once\n - scripts-per-boot\n - scripts-per-instance\n - scripts-user\n",
@@ -60,17 +61,17 @@ var js = []byte(`{
 }
 `)
 
-func server() {
+func server(t *testing.T) {
 	stfs := DigitalOceanMetadata{}
-	err := json.Unmarshal(js, &stfs.Metadata.V1)
+	err := json.Unmarshal(doOrig, &stfs.Metadata.V1)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	http.Handle("/metadata/v1/", FileServer(&stfs, "json", time.Now()))
-	http.Handle("/", &stfs)
+	http.Handle("/metadata/v1.json", &stfs)
 	go func() {
-		panic(http.ListenAndServe("127.0.0.1:8080", nil))
+		t.Fatal(http.ListenAndServe("127.0.0.1:8080", nil))
 	}()
 	time.Sleep(2 * time.Second)
 }
@@ -84,25 +85,49 @@ func get(path string) ([]byte, error) {
 	return ioutil.ReadAll(res.Body)
 }
 
-var tests = []struct {
-	in  string
-	out string
-}{
-	{"http://127.0.0.1:8080/metadata/v1/", "droplet_id\nhostname\nvendor_data\npublic_keys\nregion\ninterfaces\nfloating_ip\ndns\nfeatures"},
-	{"http://127.0.0.1:8080/metadata/v1/droplet_id", "2756294"},
-	{"http://127.0.0.1:8080/metadata/v1/dns/", "nameservers"},
-	{"http://127.0.0.1:8080/metadata/v1/dns/nameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
-	{"http://127.0.0.1:8080/metadata/v1/features/dhcp_enabled", "true"},
-}
-
 func TestAll(t *testing.T) {
-	server()
+	server(t)
+
+	var tests = []struct {
+		in  string
+		out string
+	}{
+		{"http://127.0.0.1:8080/metadata/v1/", "droplet_id\nhostname\nvendor_data\npublic_keys\nregion\ninterfaces\nfloating_ip\ndns\nfeatures"},
+		{"http://127.0.0.1:8080/metadata/v1/droplet_id", "2756294"},
+		{"http://127.0.0.1:8080/metadata/v1/dns/", "nameservers"},
+		{"http://127.0.0.1:8080/metadata/v1/dns/nameservers", "2001:4860:4860::8844\n2001:4860:4860::8888\n8.8.8.8"},
+		{"http://127.0.0.1:8080/metadata/v1/features/dhcp_enabled", "true"},
+	}
 
 	for _, tt := range tests {
-		buf, _ := get(tt.in)
+		buf, err := get(tt.in)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if string(buf) != tt.out {
-			t.Errorf("%s get %s want %s", tt.in, string(buf), tt.out)
+			t.Errorf("req %s output %s not match requested %s", tt.in, string(buf), tt.out)
 		}
 	}
 
+	doTest, err := get("http://127.0.0.1:8080/metadata/v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oSt := DigitalOceanMetadata{}
+	err = json.Unmarshal(doOrig, &oSt.Metadata.V1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nSt := DigitalOceanMetadata{}
+
+	err = json.Unmarshal(doTest, &nSt.Metadata.V1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(oSt, nSt) {
+		t.Fatalf("%v not match %v", oSt, nSt)
+	}
 }
